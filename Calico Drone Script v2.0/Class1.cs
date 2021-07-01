@@ -20,119 +20,75 @@ using VRageMath;
 
 namespace IngameScript
 {
-    public interface Mode
+    public class TargetTracker
     {
-        void Run();
-        void Configure(string configString);
+        public long targetId { get; private set; }
+        public Vector3D position { get; private set; }
+        public Vector3D velocity { get; private set; }
+        List<MyDetectedEntityInfo> _contacts;
+        List<string> _messages;
+
+        public virtual void Update(List<string> messages, List<MyDetectedEntityInfo> contacts)
+        {
+            _contacts.Clear();
+            _contacts = contacts;
+            _messages.Clear();
+            _messages = messages;
+        }
     }
 
-    public class Escort : Mode
+    public class Hivemind : TargetTracker
     {
-        MyIni _ini;
-        WcPbApi wcPbApi = new WcPbApi();
-        //Controllers
-        DroneCommsObject comms;
-        MyThrustController thrustController;
-        MyGyroController gyroController;
-        MyObjectiveControllerD target;
-        MyObjectiveControllerD center;
-        MyObjectiveControllerD master;
-        MyObjectiveControllerD obstacle;
-        //Parts
-        List<IMyCameraBlock> cameras;
-        List<IMyTerminalBlock> allBlocks;
-        //Settings
-        double minSpeed;
-        double kpObstacleAvoidence;
-        double engageRange = 1000;
-        //Other
-        int count = 0;
-        //Startup
-        LaunchDelay delay;
-        //objective data
-        MyDetectedEntityInfo currentTarget;
-        long targetId;
-        //Self data
-        Vector3D myVelocity;
-        Vector3D myLastPosition; //do not use as data, use only in velocity calculation
-        Vector3D myCurrentPosition;
-        IMyGridTerminalSystem GridTerminalSystem;
-        IMyProgrammableBlock Me;
+        
+    }
 
-        public Escort(IMyGridTerminalSystem gridTerminalSystem, IMyProgrammableBlock programmableBlock)
+    public class Screen : TargetTracker
+    {
+
+    }
+
+    public class TargetAnalyzer
+    {
+        double _targetDistance;
+        double _centerDistance;
+        double _masterDistance;
+        double _targetSize;
+
+        public TargetAnalyzer(List<double> targetValueGains)
         {
-            GridTerminalSystem = gridTerminalSystem;
-            Me = programmableBlock;
+            _targetDistance = targetValueGains[0];
+            _centerDistance = targetValueGains[1];
+            _masterDistance = targetValueGains[2];
+            _targetSize = targetValueGains[3];
         }
 
-        public void Configure(string configString)
+        public double AnalyzeSingle(MyDetectedEntityInfo contact, List<Vector3D> objectivePositions)
         {
-            double kpRotation, kiRotation, kdRotation;
-            double kpThrust, kiThrust, kdThrust;
-            double kpTargetRange, kiTargetRange, kdTargetRange;
-            double kpCenterDistance, kiCenterDistance, kdCenterDistance;
-            double kpMasterDistance, kiMasterDistance, kdMasterDistance;
-
-            cameras = new List<IMyCameraBlock>();
-            GridTerminalSystem.GetBlocksOfType(cameras);
-            allBlocks = new List<IMyTerminalBlock>();
-            GridTerminalSystem.GetBlocks(allBlocks);
-
-            _ini = new MyIni();
-            MyIniParseResult result;
-            if (!_ini.TryParse(configString, out result))
-                throw new Exception(result.ToString());
-
-            kpRotation = _ini.Get("Gains", "kpRotation").ToDouble();
-            kiRotation = _ini.Get("Gains", "kiRotation").ToDouble();
-            kdRotation = _ini.Get("Gains", "kdRotation").ToDouble();
-            gyroController = new MyGyroController(allBlocks, cameras.First(), kpRotation, kiRotation, kdRotation);
-            kpThrust = _ini.Get("Gains", "kpThrust").ToDouble();
-            kiThrust = _ini.Get("Gains", "kiThrust").ToDouble();
-            kdThrust = _ini.Get("Gains", "kdThrust").ToDouble();
-            thrustController = new MyThrustController(allBlocks, cameras.First(), kpThrust, kiThrust, kdThrust);
-            kpTargetRange = _ini.Get("Gains", "kpTargetRange").ToDouble();
-            kiTargetRange = _ini.Get("Gains", "kiTargetRange").ToDouble();
-            kdTargetRange = _ini.Get("Gains", "kdTargetRange").ToDouble();
-            target = new MyObjectiveControllerD(FeedBackType.Linear, kpTargetRange, kiTargetRange, kdTargetRange, 0);
-            kpCenterDistance = _ini.Get("Gains", "kpCenterDistance").ToDouble();
-            kiCenterDistance = _ini.Get("Gains", "kiCenterDistance").ToDouble();
-            kdCenterDistance = _ini.Get("Gains", "kdCenterDistance").ToDouble();
-            center = new MyObjectiveControllerD(FeedBackType.Exponential, kpCenterDistance, kiCenterDistance, kdCenterDistance, 0);
-            kpMasterDistance = _ini.Get("Gains", "kpMasterDistance").ToDouble();
-            kiMasterDistance = _ini.Get("Gains", "kiMasterDistance").ToDouble();
-            kdMasterDistance = _ini.Get("Gains", "kdMasterDistance").ToDouble();
-            master = new MyObjectiveControllerD(FeedBackType.Exponential, kpCenterDistance, kiCenterDistance, kdCenterDistance, 0);
-            kpObstacleAvoidence = _ini.Get("Gains", "kpObstacleAvoidence").ToDouble();
-            obstacle = new MyObjectiveControllerD(FeedBackType.Linear, kpObstacleAvoidence, 0, 0, 0);
-
-            minSpeed = _ini.Get("Settings", "minSpeed").ToDouble();
-
-            _ini.Clear();
+            double value = 0;
+            value += (contact.Position - objectivePositions[0]).Length() * _targetDistance;
+            value += (contact.Position - objectivePositions[1]).Length() * _centerDistance;
+            value += (contact.Position - objectivePositions[2]).Length() * _masterDistance;
+            value += contact.BoundingBox.Volume * _targetSize;
+            return value;
         }
 
-        public void Run()
+        public MyDetectedEntityInfo AnalyzeAll(List<MyDetectedEntityInfo> contacts, List<Vector3D> objectivePositions)
         {
-            thrustController.Tick();
-            count++;
-            int mod = count % 4;
-            switch (mod)
+            MyDetectedEntityInfo bestContact = new MyDetectedEntityInfo();
+            double bestValue = 0;
+            foreach(var contact in contacts)
             {
-                case 0:
-                    FireFixed();
-                    break;
-                case 1:
-                    Thrust();
-                    break;
-                case 2:
-                    Rotate();
-                    break;
-                case 3:
-                    Communicate();
-                    break;
-                default:
-                    break;
+                if (contact.Relationship == MyRelationsBetweenPlayerAndBlock.Enemies)
+                {
+                    double value = AnalyzeSingle(contact, objectivePositions);
+                    if(value > bestValue)
+                    {
+                        bestContact = contact;
+                        bestValue = value;
+                    }
+                }
             }
+            return bestContact;
         }
     }
 }

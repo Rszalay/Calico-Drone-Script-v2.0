@@ -39,6 +39,7 @@
   <Import Project="MDK/MDK.paths.props" Condition="exists('MDK/MDK.paths.props')" />
   <ItemGroup>
     <Compile Include="Class1.cs" />
+    <Compile Include="Mode.cs" />
     <Compile Include="Utilities.cs" />
     <Compile Include="WeaponCoreAPI.cs" />
     <Compile Include="Framework.cs" />

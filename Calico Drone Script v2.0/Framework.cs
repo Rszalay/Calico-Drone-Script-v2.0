@@ -111,9 +111,9 @@ namespace IngameScript
         Vector3D _myCurrentPosition;
         Ideal _myIdeal;
         FeedBack _feedBack;
-        public double output { get; private set; } = 0;
         double _setPoint = 0;
-
+        public double output { get; private set; } = 0;
+        public Vector3D objectiveNorm { get; private set; } = Vector3D.Zero;
         public Vector3D objectiveVelocity { get; private set; } = Vector3D.Zero;
 
         public MyObjectiveControllerD(FeedBackType feedBack, double kp, double ki, double kd, double iClamp)
@@ -130,6 +130,7 @@ namespace IngameScript
             _objectiveCurrentPosition = objectivePosition;
             objectiveVelocity = _objectiveCurrentPosition - _objectiveLastPosition;
             _objectiveLastPosition = _objectiveCurrentPosition;
+            objectiveNorm = Vector3D.Normalize(_objectiveCurrentPosition - _myCurrentPosition);
 
             double magnitude = (_objectiveCurrentPosition - _myCurrentPosition).Length();
             _myIdeal.Load(_setPoint, _feedBack.Run(magnitude));
