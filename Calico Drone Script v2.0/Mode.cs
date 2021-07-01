@@ -28,6 +28,7 @@ namespace IngameScript
 
     public class Escort : Mode
     {
+        public readonly string modeName = "Escort";
         MyIni _ini;
         WcPbApi wcPbApi = new WcPbApi();
         //Controllers
@@ -40,20 +41,17 @@ namespace IngameScript
         //Parts
         List<IMyCameraBlock> cameras;
         List<IMyTerminalBlock> allBlocks;
+        IMyTerminalBlock camera;
         //Settings
-        double minSpeed;
+        double speed;
         double engageRange = 1000;
         //Other
         int count = 0;
-        //Startup
-        LaunchDelay delay;
         //objective data
         Vector3D centerPosition = Vector3D.Zero;
         ContactTracker targetContact;
         ContactTracker masterContact;
         TargetAnalyzer targetAnalyzer;
-        long targetId;
-        long masterId;
         //Self data
         Vector3D myVelocity;
         Vector3D myLastPosition; //do not use as data, use only in velocity calculation
@@ -88,6 +86,7 @@ namespace IngameScript
             allBlocks.Clear();
             cameras = new List<IMyCameraBlock>();
             GridTerminalSystem.GetBlocksOfType(cameras);
+            camera = cameras.First();
             allBlocks = new List<IMyTerminalBlock>();
             GridTerminalSystem.GetBlocks(allBlocks);
 
@@ -99,11 +98,11 @@ namespace IngameScript
             kpRotation = _ini.Get("Escort", "kpRotation").ToDouble();
             kiRotation = _ini.Get("Escort", "kiRotation").ToDouble();
             kdRotation = _ini.Get("Escort", "kdRotation").ToDouble();
-            gyroController = new MyGyroController(allBlocks, cameras.First(), kpRotation, kiRotation, kdRotation);
+            gyroController = new MyGyroController(allBlocks, camera, kpRotation, kiRotation, kdRotation);
             kpThrust = _ini.Get("Escort", "kpThrust").ToDouble();
             kiThrust = _ini.Get("Escort", "kiThrust").ToDouble();
             kdThrust = _ini.Get("Escort", "kdThrust").ToDouble();
-            thrustController = new MyThrustController(allBlocks, cameras.First(), kpThrust, kiThrust, kdThrust);
+            thrustController = new MyThrustController(allBlocks, camera, kpThrust, kiThrust, kdThrust);
             kpTargetRange = _ini.Get("Escort", "kpTargetRange").ToDouble();
             kiTargetRange = _ini.Get("Escort", "kiTargetRange").ToDouble();
             kdTargetRange = _ini.Get("Escort", "kdTargetRange").ToDouble();
@@ -123,7 +122,7 @@ namespace IngameScript
             targetValueGains[3] = _ini.Get("TargetSelection", "targetSize").ToDouble();
             targetAnalyzer = new TargetAnalyzer(targetValueGains);
 
-            minSpeed = _ini.Get("Escort", "minSpeed").ToDouble();
+            speed = _ini.Get("Escort", "minSpeed").ToDouble();
 
             _ini.Clear();
         }
@@ -151,7 +150,7 @@ namespace IngameScript
                     Rotate(navigationVector);
                     break;
                 case 4:
-                    Communicate();
+                    Communicate(contacts);
                     break;
                 default:
                     break;
@@ -168,7 +167,7 @@ namespace IngameScript
 
         public void Thrust(Vector3D navigationVector)
         {
-            thrustController.Load(navigationVector, myVelocity, minSpeed);
+            thrustController.Load(navigationVector, myVelocity, speed);
             thrustController.Run();
 
         }
@@ -180,9 +179,29 @@ namespace IngameScript
 
         }
 
-        public void Communicate()
+        public void Communicate(List<MyDetectedEntityInfo> contacts)
         {
-
+            foreach(var message in comms.Messages)
+            {
+                if(message.Split(';')[0] == "SetMaster")
+                {
+                    long newMasterId;
+                    long.TryParse(message.Split(';')[1], out newMasterId);
+                    foreach (var contact in contacts)
+                    {
+                        if(contact.EntityId == newMasterId) { masterContact = new ContactTracker(contact); }
+                    }
+                }
+                else if (message.Split(';')[0] == "SetTarget")
+                {
+                    long newTargetId;
+                    long.TryParse(message.Split(';')[1], out newTargetId);
+                    foreach (var contact in contacts)
+                    {
+                        if (contact.EntityId == newTargetId) { masterContact = new ContactTracker(contact); }
+                    }
+                }
+            }
         }
 
         public void SelectTarget(List<MyDetectedEntityInfo> contacts)
@@ -201,6 +220,11 @@ namespace IngameScript
             target.Set(engageRange);
             center.Set(9000);//change me
             master.Set(2000);//change me
+
+            myCurrentPosition = camera.WorldMatrix.Translation;
+            myVelocity = myCurrentPosition - myLastPosition;
+            myLastPosition = myCurrentPosition;
+
             double targetValue = target.Run(targetContact.contactCurrentPosition, myCurrentPosition);
             double centerValue = center.Run(centerPosition, myCurrentPosition);
             double masterValue = master.Run(masterContact.contactCurrentPosition, myCurrentPosition);
