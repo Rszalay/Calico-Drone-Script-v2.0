@@ -20,31 +20,36 @@ using VRageMath;
 
 namespace IngameScript
 {
-    public class TargetTracker
+    public class ContactTracker
     {
-        public long targetId { get; private set; }
-        public Vector3D position { get; private set; }
-        public Vector3D velocity { get; private set; }
+        public long contactId { get; private set; }
+        public Vector3D contactCurrentPosition { get; private set; }
+        Vector3D contactLastPosition;
+        public Vector3D contactVelocity { get; private set; }
         List<MyDetectedEntityInfo> _contacts;
-        List<string> _messages;
 
-        public virtual void Update(List<string> messages, List<MyDetectedEntityInfo> contacts)
+        public ContactTracker(MyDetectedEntityInfo contact)
+        {
+            contactId = contact.EntityId;
+            contactCurrentPosition = contact.Position;
+            contactVelocity = Vector3D.Zero;
+        }
+
+        public virtual bool Update(List<MyDetectedEntityInfo> contacts)
         {
             _contacts.Clear();
             _contacts = contacts;
-            _messages.Clear();
-            _messages = messages;
+
+            MyDetectedEntityInfo myContact = contacts.Find(x => x.EntityId == contactId);
+            if (myContact.EntityId != 0)
+            {
+                contactCurrentPosition = myContact.Position;
+                contactVelocity = contactCurrentPosition - contactLastPosition;
+                contactLastPosition = contactCurrentPosition;
+                return true;
+            }
+            else { return false; }
         }
-    }
-
-    public class Hivemind : TargetTracker
-    {
-        
-    }
-
-    public class Screen : TargetTracker
-    {
-
     }
 
     public class TargetAnalyzer

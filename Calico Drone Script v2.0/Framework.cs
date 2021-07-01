@@ -27,7 +27,6 @@ namespace IngameScript
         Ideal ConX, ConY, ConZ;
         IMyTerminalBlock forwardReferenceBlock;
         public Dictionary<Base6Directions.Direction, List<IMyThrust>> thrusterSet;
-        Program _myProgram;
         double xThrottle;
         double yThrottle;
         double zThrottle;
@@ -65,7 +64,6 @@ namespace IngameScript
             velocitySp = Vector3D.Normalize(error) * speedSp;
             velocityPv = (currentPosition - lastPosition) * (60.0 / ticksSinceLastRun);
             error = (velocitySp - velocityPv);
-            _myProgram.Echo(error.Z.ToString());
             //Vector3D referenceWorldPosition = forwardReferenceBlock.WorldMatrix.Translation;
             //Vector3D worldDirection = error - referenceWorldPosition;
             //Vector3D errorInGridFrame = Vector3D.TransformNormal(worldDirection, MatrixD.Transpose(forwardReferenceBlock.WorldMatrix));
@@ -107,14 +105,13 @@ namespace IngameScript
 
     public class MyObjectiveControllerD
     {
-        Vector3D _objectiveCurrentPosition, _objectiveLastPosition;
+        Vector3D _objectiveCurrentPosition;
         Vector3D _myCurrentPosition;
         Ideal _myIdeal;
-        FeedBack _feedBack;
+        IFeedBack _feedBack;
         double _setPoint = 0;
         public double output { get; private set; } = 0;
         public Vector3D objectiveNorm { get; private set; } = Vector3D.Zero;
-        public Vector3D objectiveVelocity { get; private set; } = Vector3D.Zero;
 
         public MyObjectiveControllerD(FeedBackType feedBack, double kp, double ki, double kd, double iClamp)
         {
@@ -128,8 +125,6 @@ namespace IngameScript
         {
             _myCurrentPosition = myPosition;
             _objectiveCurrentPosition = objectivePosition;
-            objectiveVelocity = _objectiveCurrentPosition - _objectiveLastPosition;
-            _objectiveLastPosition = _objectiveCurrentPosition;
             objectiveNorm = Vector3D.Normalize(_objectiveCurrentPosition - _myCurrentPosition);
 
             double magnitude = (_objectiveCurrentPosition - _myCurrentPosition).Length();
@@ -142,8 +137,6 @@ namespace IngameScript
         {
             //call when changing targets
             _myIdeal.Reset();
-            objectiveVelocity = Vector3D.Zero;
-            _objectiveLastPosition = Vector3D.Zero;
             _setPoint = sp;
         }
         
@@ -157,12 +150,12 @@ namespace IngameScript
         Exponential = 2
     }
 
-    public interface FeedBack
+    public interface IFeedBack
     {
         double Run(double pv);
     }
 
-    public class Linear : FeedBack
+    public class Linear : IFeedBack
     {
         public double Run(double pv)
         {
@@ -170,7 +163,7 @@ namespace IngameScript
         }
     }
 
-    public class Cubic : FeedBack
+    public class Cubic : IFeedBack
     {
         public double Run(double pv)
         {
@@ -178,7 +171,7 @@ namespace IngameScript
         }
     }
 
-    public class Exponential : FeedBack
+    public class Exponential : IFeedBack
     {
         public double Run(double pv)
         {

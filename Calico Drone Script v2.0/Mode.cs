@@ -37,22 +37,21 @@ namespace IngameScript
         MyObjectiveControllerD target;
         MyObjectiveControllerD center;
         MyObjectiveControllerD master;
-        MyObjectiveControllerD obstacle;
         //Parts
         List<IMyCameraBlock> cameras;
         List<IMyTerminalBlock> allBlocks;
         //Settings
         double minSpeed;
-        double kpObstacleAvoidence;
         double engageRange = 1000;
         //Other
         int count = 0;
         //Startup
         LaunchDelay delay;
         //objective data
-        MyDetectedEntityInfo targetInfo;
-        MyDetectedEntityInfo masterInfo;
         Vector3D centerPosition = Vector3D.Zero;
+        ContactTracker targetContact;
+        ContactTracker masterContact;
+        TargetAnalyzer targetAnalyzer;
         long targetId;
         long masterId;
         //Self data
@@ -117,8 +116,12 @@ namespace IngameScript
             kiMasterDistance = _ini.Get("Escort", "kiMasterDistance").ToDouble();
             kdMasterDistance = _ini.Get("Escort", "kdMasterDistance").ToDouble();
             master = new MyObjectiveControllerD(FeedBackType.Exponential, kpCenterDistance, kiCenterDistance, kdCenterDistance, 0);
-            kpObstacleAvoidence = _ini.Get("Escort", "kpObstacleAvoidence").ToDouble();
-            obstacle = new MyObjectiveControllerD(FeedBackType.Linear, kpObstacleAvoidence, 0, 0, 0);//Impliment later
+            List<double> targetValueGains = new List<double>();
+            targetValueGains[0] = _ini.Get("TargetSelection", "targetDistance").ToDouble();
+            targetValueGains[1] = _ini.Get("TargetSelection", "centerDistance").ToDouble();
+            targetValueGains[2] = _ini.Get("TargetSelection", "masterDistance").ToDouble();
+            targetValueGains[3] = _ini.Get("TargetSelection", "targetSize").ToDouble();
+            targetAnalyzer = new TargetAnalyzer(targetValueGains);
 
             minSpeed = _ini.Get("Escort", "minSpeed").ToDouble();
 
@@ -129,28 +132,33 @@ namespace IngameScript
         {
             thrustController.Tick();
             count++;
-            int mod = count % 4;
             Vector3D navigationVector = GetNavigationVector();
-            switch (mod)
+            Dictionary<MyDetectedEntityInfo, float> threats = new Dictionary<MyDetectedEntityInfo, float>();
+            wcPbApi.GetSortedThreats(Me, threats);
+            List<MyDetectedEntityInfo> contacts = new List<MyDetectedEntityInfo>();
+            foreach(var threat in threats) { contacts.Add(threat.Key); }
+            if (!targetContact.Update(contacts)) { SelectTarget(contacts); }
+            masterContact.Update(contacts);
+            switch (count)
             {
-                case 0:
+                case 1:
                     FireFixed();
                     break;
-                case 1:
-                    thrustController.Load(navigationVector, myVelocity, minSpeed);
-                    thrustController.Run();
-                    break;
                 case 2:
-                    gyroController.Load(navigationVector,new Vector3D(0,1,0));//impliment roll later
-                    gyroController.Run();
+                    Thrust(navigationVector);
                     break;
                 case 3:
+                    Rotate(navigationVector);
+                    break;
+                case 4:
                     Communicate();
                     break;
                 default:
                     break;
             }
-            if(count >= 3) { count = 0; }
+            if(count >= 4) { count = 0; }
+            threats.Clear();
+            contacts.Clear();
         }
 
         public void FireFixed()
@@ -158,13 +166,17 @@ namespace IngameScript
 
         }
 
-        public void Thrust()
+        public void Thrust(Vector3D navigationVector)
         {
+            thrustController.Load(navigationVector, myVelocity, minSpeed);
+            thrustController.Run();
 
         }
 
-        public void Rotate()
+        public void Rotate(Vector3D navigationVector)
         {
+            gyroController.Load(navigationVector,new Vector3D(0,1,0));//implement roll later
+            gyroController.Run();
 
         }
 
@@ -173,17 +185,30 @@ namespace IngameScript
 
         }
 
+        public void SelectTarget(List<MyDetectedEntityInfo> contacts)
+        {
+            List<Vector3D> objectives = new List<Vector3D>();
+            objectives[0] = myCurrentPosition;
+            objectives[1] = centerPosition;
+            objectives[2] = masterContact.contactCurrentPosition;
+            MyDetectedEntityInfo newTarget = targetAnalyzer.AnalyzeAll(contacts, objectives);
+            targetContact = new ContactTracker(newTarget);
+            objectives.Clear();
+        }
+
         public Vector3D GetNavigationVector()
         {
-            double targetValue = target.Run(targetInfo.Position, myCurrentPosition);
+            target.Set(engageRange);
+            center.Set(9000);//change me
+            master.Set(2000);//change me
+            double targetValue = target.Run(targetContact.contactCurrentPosition, myCurrentPosition);
             double centerValue = center.Run(centerPosition, myCurrentPosition);
-            double masterValue = master.Run(masterInfo.Position, myCurrentPosition);
-            double obstacleValue = 0; //implement later
+            double masterValue = master.Run(masterContact.contactCurrentPosition, myCurrentPosition);
 
             Vector3D navigationVector = Vector3D.Zero;
-            navigationVector += targetValue * target.objectiveNorm;
+            if(targetContact.contactId != 0)navigationVector += targetValue * target.objectiveNorm;
             navigationVector += centerValue * center.objectiveNorm;
-            navigationVector += masterValue * master.objectiveNorm;
+            if (masterContact.contactId != 0) navigationVector += masterValue * master.objectiveNorm;
             navigationVector += myVelocity;
             return Vector3D.Normalize(navigationVector);
         }
