@@ -3,7 +3,8 @@ channel=asdf
 centerX=0
 centerY=0
 centerZ=0
-[Escort]
+[Mode:Escort]
+modeName=Escort
 kpRotation=1
 kiRotation=0
 kdRotation=0

@@ -23,7 +23,7 @@ namespace IngameScript
     public interface Mode
     {
         void Run();
-        void Configure(string configString);
+        void Configure(string configString, object goal = null);
     }
 
     public class Escort : Mode
@@ -74,7 +74,7 @@ namespace IngameScript
             _ini.Clear();
         }
 
-        public void Configure(string configString)
+        public void Configure(string configString, object goal = null)
         {
             double kpRotation, kiRotation, kdRotation;
             double kpThrust, kiThrust, kdThrust;
@@ -169,14 +169,12 @@ namespace IngameScript
         {
             thrustController.Load(navigationVector, myVelocity, speed);
             thrustController.Run();
-
         }
 
         public void Rotate(Vector3D navigationVector)
         {
             gyroController.Load(navigationVector,new Vector3D(0,1,0));//implement roll later
             gyroController.Run();
-
         }
 
         public void Communicate(List<MyDetectedEntityInfo> contacts)
@@ -235,6 +233,34 @@ namespace IngameScript
             if (masterContact.contactId != 0) navigationVector += masterValue * master.objectiveNorm;
             navigationVector += myVelocity;
             return Vector3D.Normalize(navigationVector);
+        }
+    }
+
+    public class ModeLoader
+    {
+        Dictionary<string, Mode> operatingModes = new Dictionary<string, Mode>();
+
+        public Dictionary<string, Mode> Load(string configString)
+        {
+            MyIni _ini;
+            List<MyIniKey> iniKeys = new List<MyIniKey>();
+            List<string> modesToLoad = new List<string>();
+            _ini = new MyIni();
+            MyIniParseResult result;
+            if (!_ini.TryParse(configString, out result))
+                throw new Exception(result.ToString());
+
+            _ini.GetKeys(configString, iniKeys);
+            foreach(var key in iniKeys)
+            {
+                string name = "";
+                if(key.Name.Split()[0] == "Mode") { name = key.Name.Split()[1]; }
+                if (name != "") { modesToLoad.Add(name)};
+            }
+            foreach(var mode in modesToLoad)
+            {
+
+            }
         }
     }
 }
